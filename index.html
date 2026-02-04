@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cloud Image</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+    <h2>Cloud Image</h2>
+    
+    <div class="controls">
+        <input type="file" id="imageInput" accept="image/*">
+        <button onclick="uploadImage()">Add Image</button>
+        <button onclick="refreshList()">Refresh List</button>
+        <div id="statusMsg" class="status"></div>
+    </div>
+
+    <div id="gallery">
+        <p>No images loaded yet. Click "Refresh List".</p>
+    </div>
+
+    <script>
+       
+        const CONFIG = {
+            TOKEN: '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',
+            OWNER: 'adylhyde',
+            REPO: 'cloud-images',
+            PATH: 'assets'
+        };
+
+        const statusMsg = document.getElementById('statusMsg');
+        const gallery = document.getElementById('gallery');
+
+        
+        function showStatus(text, isError = false) {
+            statusMsg.innerText = text;
+            statusMsg.className = isError ? 'status error' : 'status success';
+            setTimeout(() => { statusMsg.style.display = 'none'; }, 5000);
+        }
+
+    
+        async function refreshList() {
+            const url = `https://api.github.com/repos/${CONFIG.OWNER}/${CONFIG.REPO}/contents/${CONFIG.PATH}`;
+            
+            try {
+                const response = await fetch(url, {
+                    headers: { "Authorization": `token ${CONFIG.TOKEN}` }
+                });
+
+                if (!response.ok) throw new Error('Failed to fetch file list');
+                
+                const files = await response.json();
+                displayImages(files);
+                showStatus('List updated!');
+            } catch (err) {
+                showStatus(err.message, true);
+            }
+        }
+
+        
+        function displayImages(files) {
+            gallery.innerHTML = '';
+            files.forEach(file => {
+                if (file.type === 'file') {
+                    const card = document.createElement('div');
+                    card.className = 'img-card';
+                    card.innerHTML = `
+                        <img src="${file.download_url}" alt="${file.name}">
+                        <small>${file.name}</small>
+                    `;
+                    gallery.appendChild(card);
+                }
+            });
+        }
+
+        
+        async function uploadImage() {
+            const fileInput = document.getElementById('imageInput');
+            if (fileInput.files.length === 0) return showStatus('Please select a file', true);
+
+            const file = fileInput.files[0];
+            const reader = new FileReader();
+
+            reader.onloadend = async () => {
+                const base64Content = reader.result.split(',')[1];
+                const fileName = file.name;
+                const url = `https://api.github.com/repos/${CONFIG.OWNER}/${CONFIG.REPO}/contents/${CONFIG.PATH}/${fileName}`;
+
+                showStatus('Uploading to cloud...');
+
+                try {
+                    // Check if file exists to get SHA (required for updates/overwrites)
+                    let sha = null;
+                    const checkRes = await fetch(url, {
+                        headers: { "Authorization": `token ${CONFIG.TOKEN}` }
+                    });
+                    if (checkRes.ok) {
+                        const existingFileData = await checkRes.json();
+                        sha = existingFileData.sha;
+                    }
+
+                    const uploadRes = await fetch(url, {
+                        method: 'PUT',
+                        headers: {
+                            "Authorization": `token ${CONFIG.TOKEN}`,
+                            "Content-Type": "application/json"
+                        },
+                        body: JSON.stringify({
+                            message: `Upload ${fileName}`,
+                            content: base64Content,
+                            sha: sha // Only needed if file is being overwritten
+                        })
+                    });
+
+                    if (uploadRes.ok) {
+                        showStatus('Image saved to cloud!');
+                        refreshList();
+                    } else {
+                        throw new Error('Upload failed');
+                    }
+                } catch (err) {
+                    showStatus(err.message, true);
+                }
+            };
+
+            reader.readAsDataURL(file);
+        }
+    </script>
+</body>
+</html>
